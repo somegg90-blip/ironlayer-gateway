@@ -1,0 +1,14 @@
+# Environment variables (KEEP SAFE)
+.env
+
+# Virtual environment
+venv/
+__pycache__/
+*.pyc
+
+# Audit logs (User data)
+audit_log.json
+
+# IDE stuff
+.vscode/
+.idea/
