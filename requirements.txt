@@ -6,4 +6,10 @@ httpx
 python-dotenv
 pydantic-settings
 streamlit
-https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+
+# --- CRITICAL FIXES ---
+# Pin Spacy to a stable version that works with Pydantic v2
+spacy==3.7.4
+
+# Download the model directly (version matches spacy)
+https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
