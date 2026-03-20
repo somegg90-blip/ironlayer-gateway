@@ -46,30 +46,19 @@ async def forward_request(method: str, path: str, headers: dict, body: bytes):
             data = json.loads(body)
             
             # --- 1. TOKEN GUARD ---
-            full_text = " ".join([m.get("content", "") for m in data.get("messages", [])])
+            full_text = " ".join([m.get("content", "") if isinstance(m.get("content"), str) else "" for m in data.get("messages", [])])
             token_count = count_tokens(full_text)
             
             if token_count > settings.MAX_INPUT_TOKENS:
                 raise HTTPException(
                     status_code=400, 
-                    detail=f"Security Alert: Input too large ({token_count} tokens). Limit is {settings.MAX_INPUT_TOKENS}."
+                    detail=f"Security Alert: Input too large ({token_count} tokens)."
                 )
 
-            # --- 2. ENFORCE FREE MODELS (Cost Control) ---
-            # We ignore whatever model the user asked for and FORCE a free one.
-            # This guarantees $0 cost.
+            # --- 2. MODEL SELECTION (Free Models Only) ---
             data["model"] = select_model(full_text)
 
-            # --- 3. REASONING MODEL CONFIG ---
-            if "nemotron" in data["model"]:
-                data["reasoning"] = {"enabled": True}
-                print("[Config] Enabled Reasoning Mode.")
-
-            # --- 4. OUTPUT TOKEN LIMIT ---
-            if "max_tokens" not in data:
-                data["max_tokens"] = settings.MAX_OUTPUT_TOKENS
-
-            # --- 5. SANITIZATION ---
+            # --- 3. SANITIZATION (Messages + Tool Calls) ---
             if "messages" in data:
                 # Inject System Instruction
                 system_instruction = {
@@ -79,16 +68,24 @@ async def forward_request(method: str, path: str, headers: dict, body: bytes):
                 data["messages"].insert(0, system_instruction)
 
                 for message in data["messages"]:
-                    if "CRITICAL SECURITY INSTRUCTION" in message.get("content", ""):
-                        continue
+                    # A. Sanitize Content (Standard Chat)
                     if isinstance(message.get("content"), str):
                         message["content"] = sanitize_text(message["content"])
+                    
+                    # B. Sanitize Tool Calls (Agent Actions) - NEW!
+                    if "tool_calls" in message:
+                        for tool_call in message["tool_calls"]:
+                            if "function" in tool_call and "arguments" in tool_call["function"]:
+                                # Arguments are a JSON string, we need to scrub it
+                                args_str = tool_call["function"]["arguments"]
+                                scrubbed_args = sanitize_text(args_str)
+                                tool_call["function"]["arguments"] = scrubbed_args
+                                print("[IronLayer] Sanitized Agent Tool Call arguments.")
 
                 print(f"[IronLayer] Secure payload sent to {data['model']}.")
                 body = json.dumps(data).encode('utf-8')
                 
         except PolicyBlockedException as e:
-            # Handle the Block Mode
             print(f"!!! [IronLayer] REQUEST BLOCKED: {e}")
             raise HTTPException(status_code=403, detail=str(e))
             
@@ -103,6 +100,7 @@ async def forward_request(method: str, path: str, headers: dict, body: bytes):
         content=body
     )
     
+    # ... (Rest of function remains same: error handling, return response)
     if response.status_code >= 400:
         print(f"\n!!! UPSTREAM ERROR ({response.status_code}) !!!")
         print(response.text[:500]) 
